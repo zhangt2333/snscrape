@@ -168,6 +168,9 @@ class Scraper:
 		self._session = requests.Session()
 		self._session.mount('https://', _HTTPSAdapter())
 
+		# ad-hoc for the 404
+		self._retries = 999
+
 	@abc.abstractmethod
 	def get_items(self):
 		'''Iterator yielding Items.'''
@@ -201,6 +204,27 @@ class Scraper:
 				_logger.debug(f'... with environmentSettings: {environmentSettings!r}')
 			try:
 				r = self._session.send(req, allow_redirects = allowRedirects, timeout = timeout, **environmentSettings)
+
+				# ad-hoc for the 404
+				if "Sorry, that page does not exist" in r.text:
+					try:
+						r.request.headers.update({"Accept-Encoding": ""})
+						import urllib.request
+						if proxies:
+							urllib.request.install_opener(
+								urllib.request.build_opener(
+									urllib.request.ProxyHandler(proxies)
+								)
+							)
+						with urllib.request.urlopen(
+								urllib.request.Request(r.request.url, 
+									headers=r.request.headers, method=r.request.method)
+						) as response:
+							r._content = response.read()
+							r.status_code = 200
+					except: pass
+
+
 			except requests.exceptions.RequestException as exc:
 				if attempt < self._retries:
 					retrying = ', retrying'
